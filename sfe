@@ -1,0 +1,70 @@
+import React from 'react';
+import { Provider as PaperProvider, MD3LightTheme, configureFonts } from 'react-native-paper';
+import { useFonts } from 'expo-font';
+import { LanguageProvider, useLanguage } from './LanguageProvider';
+import RootNavigator from './RootNavigator';
+
+function makeTheme(lang: 'en' | 'ar') {
+  const en = lang === 'en';
+  const base = MD3LightTheme;
+  const F = (w: 'Regular'|'Bold'|'Heavy') =>
+    en ? `Ithra-${w}` : `IthraArabic-${w}`;     // fallback: use Ithra-* for both if Arabic-specific not available
+
+  const fontConfig = {
+    displayLarge:   { fontFamily: F('Heavy'),   fontWeight: '800' as any },
+    displayMedium:  { fontFamily: F('Heavy'),   fontWeight: '800' as any },
+    displaySmall:   { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    headlineLarge:  { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    headlineMedium: { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    headlineSmall:  { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    titleLarge:     { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    titleMedium:    { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    titleSmall:     { fontFamily: F('Regular'), fontWeight: '400' as any },
+    bodyLarge:      { fontFamily: F('Regular'), fontWeight: '400' as any },
+    bodyMedium:     { fontFamily: F('Regular'), fontWeight: '400' as any },
+    bodySmall:      { fontFamily: F('Regular'), fontWeight: '400' as any },
+    labelLarge:     { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    labelMedium:    { fontFamily: F('Bold'),    fontWeight: '700' as any },
+    labelSmall:     { fontFamily: F('Regular'), fontWeight: '400' as any },
+  };
+
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: '#c6a96b',
+      background: '#0b3d2e',
+    },
+    fonts: configureFonts({ config: fontConfig }),
+  };
+}
+
+function ThemedApp() {
+  const { lang } = useLanguage();
+  const [fontsLoaded] = useFonts({
+    'Ithra-Regular': require('./assets/fonts/Ithra-Regular.ttf'),
+    'Ithra-Bold': require('./assets/fonts/Ithra-Bold.ttf'),
+    'Ithra-Heavy': require('./assets/fonts/Ithra-Heavy.ttf'),
+    // If you have Arabic-specific TTFs, keep these;
+    // otherwise you can omit and the EN family will be used above.
+    'IthraArabic-Regular': require('./assets/fonts/IthraArabic-Regular.ttf'),
+    'IthraArabic-Bold': require('./assets/fonts/IthraArabic-Bold.ttf'),
+    'IthraArabic-Heavy': require('./assets/fonts/IthraArabic-Heavy.ttf'),
+  });
+
+  if (!fontsLoaded) return null;
+  const theme = React.useMemo(() => makeTheme(lang), [lang]);
+  return (
+    <PaperProvider theme={theme}>
+      <RootNavigator />
+    </PaperProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <ThemedApp />
+    </LanguageProvider>
+  );
+}
