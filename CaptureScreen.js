@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import { Button, Text, TextInput, Checkbox } from "react-native-paper";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as FaceDetector from "expo-face-detector";
+import { BlurView } from "expo-blur";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useLanguage } from "./LanguageProvider";
 import { STR, rtl } from "./i18n";
@@ -23,6 +25,8 @@ import { createEntry } from "./api";
 import { StatusBar } from "expo-status-bar";
 import { HelperText } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import UnifiedFaceBlurCamera from "./components/UnifiedFaceBlurCamera";
+import WebDirectFaceBlur from "./components/WebDirectFaceBlur";
 
 const BG_COLOR = "#00343A";
 const GOLD = "#c6a96b";
@@ -49,11 +53,20 @@ function BlurCameraModal({
   S,
   lang,
 }) {
+  const [faces, setFaces] = useState([]);
+  const [isFaceDetected, setIsFaceDetected] = useState(false);
+
   useEffect(() => {
     if (isVisible && !permission?.granted) {
       requestPermission && requestPermission();
     }
   }, [isVisible, permission?.granted, requestPermission]);
+
+  const handleFacesDetected = ({ faces }) => {
+    setFaces(faces);
+    const hasFace = faces.length > 0;
+    setIsFaceDetected(hasFace);
+  };
 
   return (
     <Modal visible={isVisible} animationType="fade" transparent onRequestClose={onRequestClose}>
@@ -61,30 +74,95 @@ function BlurCameraModal({
         <View style={styles.modalCard}>
           {permission?.granted ? (
             <View style={styles.liveCameraContainer}>
-              {/* Single camera preview */}
-              <CameraView
-                ref={camRef}
-                style={[styles.liveCameraBackground, { transform: [{ scaleX: -1 }] }]}
-                facing="front"
-                ratio="16:9"
-              />
-              {/* Light frosted tint (visual only; not a real blur) */}
-              <View style={styles.frostedOverlay} />
-              {/* Circular focus ring */}
-              <View
-                style={[
-                  styles.circularCutout,
-                  {
-                    width: faceDia,
-                    height: faceDia,
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    marginLeft: -faceDia / 2,
-                    marginTop: -faceDia / 2,
-                  },
-                ]}
-              />
+              {Platform.OS === 'web' ? (
+                // Web version using direct HTML5/MediaPipe
+                <WebDirectFaceBlur 
+                  style={StyleSheet.absoluteFillObject}
+                  onFaceDetected={() => setIsFaceDetected(true)}
+                  onFaceLost={() => setIsFaceDetected(false)}
+                />
+              ) : Platform.OS === 'ios' ? (
+                // iOS version using WebView with HTML/MediaPipe
+                <UnifiedFaceBlurCamera 
+                  style={StyleSheet.absoluteFillObject}
+                  onFaceDetected={() => setIsFaceDetected(true)}
+                  onFaceLost={() => setIsFaceDetected(false)}
+                />
+              ) : (
+                // Mobile version using native libraries
+                <>
+                  {/* Single camera preview */}
+                  <CameraView
+                    ref={camRef}
+                    style={[styles.liveCameraBackground, { transform: [{ scaleX: -1 }] }]}
+                    facing="front"
+                    ratio="16:9"
+                    onFacesDetected={handleFacesDetected}
+                    faceDetectorSettings={{
+                      mode: FaceDetector.FaceDetectorMode.fast,
+                      detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
+                      runClassifications: FaceDetector.FaceDetectorClassifications.none,
+                      minDetectionInterval: 100,
+                      tracking: true,
+                    }}
+                  />
+                  
+                  {/* Blurred background overlay */}
+                  <BlurView
+                    intensity={80}
+                    tint="light"
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  
+                  {/* Face cutout areas */}
+                  {faces.map((face, index) => {
+                    const { bounds } = face;
+                    const { origin, size } = bounds;
+                    
+                    // Convert normalized coordinates to container coordinates
+                    const containerWidth = styles.liveCameraContainer.width || 400;
+                    const containerHeight = (containerWidth * 9) / 16; // 16:9 aspect ratio
+                    
+                    const x = origin.x * containerWidth;
+                    const y = origin.y * containerHeight;
+                    const width = size.width * containerWidth;
+                    const height = size.height * containerHeight;
+                    
+                    // Expand the face area slightly (like the HTML example's scale: 1.2)
+                    const scale = 1.2;
+                    const expandedWidth = width * scale;
+                    const expandedHeight = height * scale;
+                    const expandedX = x - (expandedWidth - width) / 2;
+                    const expandedY = y - (expandedHeight - height) / 2;
+
+                    return (
+                      <View
+                        key={index}
+                        style={[
+                          styles.faceCutout,
+                          {
+                            left: expandedX,
+                            top: expandedY,
+                            width: expandedWidth,
+                            height: expandedHeight,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </>
+              )}
+              
+              {/* Status indicator */}
+              <View style={styles.statusContainer}>
+                <View style={[
+                  styles.statusDot,
+                  { backgroundColor: isFaceDetected ? '#4CAF50' : '#FF5722' }
+                ]} />
+                <Text style={styles.statusText}>
+                  {isFaceDetected ? 'Face detected' : 'No face detected'}
+                </Text>
+              </View>
             </View>
           ) : (
             <View style={[styles.modalCam, { alignItems: "center", justifyContent: "center" }]}>
@@ -201,13 +279,51 @@ useEffect(() => {
 
   const capture = async () => {
     try {
-      const shot = await camRef.current?.takePictureAsync({
-        quality: 0.9,
-        skipProcessing: true,
-      });
-      if (shot?.uri) setPhotoUri(shot.uri);
-      setShowCam(false);
-    } catch {}
+      if (Platform.OS === 'web') {
+        // For web, capture from the canvas with blur effect already applied
+        if (window.captureBlurredPhoto) {
+          const dataURL = window.captureBlurredPhoto();
+          if (dataURL) {
+            setPhotoUri(dataURL);
+            setShowCam(false);
+          }
+        } else {
+          // Fallback: try to find canvas directly
+          const canvas = document.querySelector('canvas');
+          if (canvas) {
+            const dataURL = canvas.toDataURL('image/jpeg', 0.9);
+            setPhotoUri(dataURL);
+            setShowCam(false);
+          }
+        }
+      } else {
+        // For mobile, take regular photo and apply blur effect
+        const shot = await camRef.current?.takePictureAsync({
+          quality: 0.9,
+          skipProcessing: true,
+        });
+        if (shot?.uri) {
+          // Apply blur effect to the captured photo
+          const blurredPhotoUri = await applyBlurToPhoto(shot.uri);
+          setPhotoUri(blurredPhotoUri || shot.uri);
+        }
+        setShowCam(false);
+      }
+    } catch (error) {
+      console.error('Capture error:', error);
+    }
+  };
+
+  const applyBlurToPhoto = async (photoUri) => {
+    try {
+      // This would apply the same blur effect to the captured photo
+      // For now, we'll return the original photo
+      // In a full implementation, you'd process the image with the same blur logic
+      return photoUri;
+    } catch (error) {
+      console.error('Blur processing error:', error);
+      return photoUri;
+    }
   };
 
   // Form
@@ -735,4 +851,32 @@ const styles = StyleSheet.create({
     // backgroundColor: "rgba(255,255,255,0.10)",
   },
   circularCutout: {},
+  faceCutout: {
+    position: "absolute",
+    backgroundColor: "transparent",
+    // This creates a "cutout" effect by being transparent
+    // The camera feed will show through here while the blur overlay covers everything else
+  },
+  statusContainer: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusText: {
+    color: "white",
+    fontSize: 12,
+    fontFamily: "IthraV3-bold",
+  },
 });

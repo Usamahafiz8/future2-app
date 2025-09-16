@@ -1,5 +1,10 @@
 {
   "expo": {
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "plugins": [
       [
         "expo-camera",
@@ -9,6 +14,16 @@
           "recordAudioAndroid": true
         }
       ]
-    ]
+    ],
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.futureme22"
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.futureme22"
+    }
   }
 }
