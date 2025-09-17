@@ -28,7 +28,7 @@ function ThemedApp() {
 
   // Map Paper variants -> your real families
   const F = React.useCallback(
-    (w: 'Regular' | 'Bold' | 'Heavy') => {
+    (w) => {
       // if you ever add true Arabic-specific families, switch here by lang
       if (w === 'Bold' || w === 'Heavy') return 'ithraV3-bold';
       return 'ithraV3-medium'; // use medium as your Regular body
